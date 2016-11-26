@@ -62,7 +62,7 @@ public class NetworkManager : MonoBehaviour {
     }
 
     public void CommandMove(Vector3 vec3) {
-        string data = JsonUtility.ToJson(new PositionJSON(vec3));
+        string data = JsonUtility.ToJson(new PositionJSON(playerNameInput.text, vec3));
         socket.Emit("player move", new JSONObject(data));
     }
 
@@ -237,10 +237,14 @@ public class NetworkManager : MonoBehaviour {
     }
 
     [Serializable]
-    public class PositionJSON {
+    public class PositionJSON
+    {
+        public string name;
         public float[] position;
 
-        public PositionJSON(Vector3 _position) {
+        public PositionJSON(string _name, Vector3 _position)
+        {
+            name = _name;
             position = new float[] { _position.x, _position.y, _position.z };
         }
     }
