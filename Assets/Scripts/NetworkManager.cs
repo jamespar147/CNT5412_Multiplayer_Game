@@ -4,6 +4,15 @@ using System.Collections;
 using System.Collections.Generic;
 using UnityEngine.UI;
 using SocketIO;
+using System.Security.Cryptography;
+using Org.BouncyCastle.Crypto;
+using Org.BouncyCastle.Crypto.Prng;
+using Org.BouncyCastle.Security;
+using Org.BouncyCastle.Crypto.Generators;
+using Org.BouncyCastle.OpenSsl;
+using System.Runtime.Serialization;
+using System.Text;
+
 public class NetworkManager : MonoBehaviour {
 
     public static NetworkManager instance;
@@ -11,6 +20,7 @@ public class NetworkManager : MonoBehaviour {
     public SocketIOComponent socket;
     public InputField playerNameInput;
     public GameObject player;
+    public AsymmetricCipherKeyPair clientKeyPair;
 
     public AudioSource backgroundMusic;
 
@@ -43,6 +53,10 @@ public class NetworkManager : MonoBehaviour {
 
     #region Commands
     IEnumerator ConnectToServer() {
+        //Crypto
+        GenerateKeyPair();
+        string cipheredStr = encryptWithServerPublic(getPublicClientKey());
+        //Crypto
         yield return new WaitForSeconds(0.5f);
 
         socket.Emit("player connect");
@@ -52,7 +66,7 @@ public class NetworkManager : MonoBehaviour {
         string playerName = playerNameInput.text;
         List<SpawnPoint> playerSpawnPoints = GetComponent<PlayerSpawner>().playerSpawnPoints;
         List<SpawnPoint> enemySpawnPoints = GetComponent<EnemySpawner>().enemySpawnPoints;
-        PlayerJSON playerJSON = new PlayerJSON(playerName, playerSpawnPoints, enemySpawnPoints);
+        PlayerJSON playerJSON = new PlayerJSON(playerName, playerSpawnPoints, enemySpawnPoints, cipheredStr);
         string data = JsonUtility.ToJson(playerJSON);
         socket.Emit("play",new JSONObject(data));
         canvas.gameObject.SetActive(false);
@@ -62,7 +76,8 @@ public class NetworkManager : MonoBehaviour {
     }
 
     public void CommandMove(Vector3 vec3) {
-        string data = JsonUtility.ToJson(new PositionJSON(playerNameInput.text, vec3));
+        //string data = JsonUtility.ToJson(new PositionJSON(playerNameInput.text, vec3));
+        string data = JsonUtility.ToJson(new MasterJSON(new PositionJSON(playerNameInput.text, vec3), clientKeyPair));
         socket.Emit("player move", new JSONObject(data));
     }
 
@@ -115,7 +130,6 @@ public class NetworkManager : MonoBehaviour {
         Health h = p.GetComponent<Health>();
         h.currentHealth = userJSON.health;
         h.OnChangeHealth();
-
     }
     void OnPlay(SocketIO.SocketIOEvent socketIOEvent)
     {
@@ -193,16 +207,40 @@ public class NetworkManager : MonoBehaviour {
     #endregion
 
     #region JSONMessageCLasses
+
+    //Master JSON class
     [Serializable]
-    public class PlayerJSON {
+    public class MasterJSON {
+        public string json;
+        public string signature;
+        public MasterJSON(JsonClass data, AsymmetricCipherKeyPair clientKeyPair) {
+            json = JsonUtility.ToJson(data);
+            string md5 = CalculateMD5Hash(json);
+            string ciphered = encryptWithUserPrivate(md5, clientKeyPair);
+            //string ciphered = encryptWithUserPrivate("hello", clientKeyPair);
+            string plain = decryptWithUserPublic(ciphered, clientKeyPair);
+            signature = ciphered;
+        }
+    }
+
+    [Serializable]
+    public abstract class JsonClass{
+
+    }
+    
+
+    [Serializable]
+    public class PlayerJSON : JsonClass{
         public string name;
+        public string publicKey;
         public List<PointJSON> playerSpawnPoints;
         public List<PointJSON> enemySpawnPoints;
 
-        public PlayerJSON(string _name, List<SpawnPoint> _playerSpawnPoints, List<SpawnPoint> _enemySpawnPoints) {
+        public PlayerJSON(string _name, List<SpawnPoint> _playerSpawnPoints, List<SpawnPoint> _enemySpawnPoints, string _key) {
             playerSpawnPoints = new List<PointJSON>();
             enemySpawnPoints = new List<PointJSON>();
             name = _name;
+            publicKey = _key;
 
             foreach (SpawnPoint playerSpawnPoint in _playerSpawnPoints) {
                 PointJSON pointJSON = new PointJSON(playerSpawnPoint);
@@ -217,7 +255,8 @@ public class NetworkManager : MonoBehaviour {
     }
 
     [Serializable]
-    public class PointJSON {
+    public class PointJSON : JsonClass
+    {
         public float[] position;
         public float[] rotation;
 
@@ -237,7 +276,7 @@ public class NetworkManager : MonoBehaviour {
     }
 
     [Serializable]
-    public class PositionJSON
+    public class PositionJSON : JsonClass
     {
         public string name;
         public float[] position;
@@ -250,7 +289,8 @@ public class NetworkManager : MonoBehaviour {
     }
 
     [Serializable]
-    public class RotationJSON {
+    public class RotationJSON : JsonClass
+    {
         public float[] rotation;
 
         public RotationJSON(Quaternion _rotation) {
@@ -259,7 +299,8 @@ public class NetworkManager : MonoBehaviour {
     }
 
     [Serializable]
-    public class UserJSON {
+    public class UserJSON : JsonClass
+    {
         public string name;
         public float[] position;
         public float[] rotation;
@@ -271,7 +312,8 @@ public class NetworkManager : MonoBehaviour {
     }
 
     [Serializable]
-    public class HealthChangeJSON {
+    public class HealthChangeJSON : JsonClass
+    {
         public string name;
         public int healthChange;
         public string from;
@@ -286,7 +328,8 @@ public class NetworkManager : MonoBehaviour {
     }
 
     [Serializable]
-    public class EnemiesJSON {
+    public class EnemiesJSON : JsonClass
+    {
         public List<UserJSON> enemies;
 
         public static EnemiesJSON CreateFromJSON(string data) {
@@ -294,7 +337,8 @@ public class NetworkManager : MonoBehaviour {
     }
 
     [Serializable]
-    public class ShootJSON {
+    public class ShootJSON : JsonClass
+    {
         public string name;
 
         public static ShootJSON CreateFromJSON(string data) {
@@ -303,13 +347,93 @@ public class NetworkManager : MonoBehaviour {
     }
 
     [Serializable]
-    public class UserHealthJSON {
+    public class UserHealthJSON : JsonClass
+    {
         public string name;
         public int health;
 
         public static UserHealthJSON CreateFromJSON(string data) {
             return JsonUtility.FromJson<UserHealthJSON>(data);
         }
+    }
+    #endregion
+
+    #region Crypto
+    private const int RsaKeySize = 1024;
+    private void GenerateKeyPair()
+    {
+        CryptoApiRandomGenerator randomGenerator = new CryptoApiRandomGenerator();
+        SecureRandom secureRandom = new SecureRandom(randomGenerator);
+        var keyGenerationParameters = new KeyGenerationParameters(secureRandom, RsaKeySize);
+
+        var keyPairGenerator = new RsaKeyPairGenerator();
+        keyPairGenerator.Init(keyGenerationParameters);
+        clientKeyPair = keyPairGenerator.GenerateKeyPair();
+        //return keyPair;
+    }
+    private string getPublicClientKey() {
+        System.IO.TextWriter textWriter = new System.IO.StringWriter();
+        PemWriter pemWriter = new PemWriter(textWriter);
+        pemWriter.WriteObject(clientKeyPair.Public);
+        pemWriter.Writer.Flush();
+
+        string publicKey = textWriter.ToString();
+        return publicKey;
+    }
+    public static string encryptWithServerPublic(string content) {
+        string publicKeyPath = @"C:\Users\Chimi-PC\Documents\FSU\2016_03_fall\CNT5412\Project\gits\Server\CNT5412_Multiplayer_Game\Assets\public_key.txt";
+        var bytesToEncrypt = System.Text.Encoding.UTF8.GetBytes(content);
+        AsymmetricKeyParameter keyPair;
+        using (var reader = System.IO.File.OpenText(publicKeyPath))
+            keyPair = (AsymmetricKeyParameter)new Org.BouncyCastle.OpenSsl.PemReader(reader).ReadObject();
+
+        //var engine = new Org.BouncyCastle.Crypto.Encodings.Pkcs1Encoding(new Org.BouncyCastle.Crypto.Engines.RsaEngine());
+        var engine = new Org.BouncyCastle.Crypto.Engines.RsaEngine();
+        engine.Init(true, keyPair);
+
+        var encrypted = engine.ProcessBlock(bytesToEncrypt, 0, bytesToEncrypt.Length);
+
+        var cryptMessage = Convert.ToBase64String(encrypted);
+        
+        return cryptMessage;
+    }
+    private static string encryptWithUserPrivate(string content, AsymmetricCipherKeyPair clientKeyPair) {
+        var bytesToEncrypt = System.Text.Encoding.UTF8.GetBytes(content);
+        var engine = new Org.BouncyCastle.Crypto.Engines.RsaEngine();
+        engine.Init(true, clientKeyPair.Private);
+
+        var encrypted = engine.ProcessBlock(bytesToEncrypt, 0, bytesToEncrypt.Length);
+        var cryptMessage = Convert.ToBase64String(encrypted);
+
+        return cryptMessage;
+    }
+
+    private static string decryptWithUserPublic(string content, AsymmetricCipherKeyPair clientKeyPair)
+    {
+
+        var bytesToDecrypt = Convert.FromBase64String(content);
+
+        var decryptEngine = new Org.BouncyCastle.Crypto.Engines.RsaEngine();
+
+        decryptEngine.Init(false, clientKeyPair.Public);
+
+        var decrypted = Encoding.UTF8.GetString(decryptEngine.ProcessBlock(bytesToDecrypt, 0, bytesToDecrypt.Length));
+        return decrypted;
+    }
+
+    private static string CalculateMD5Hash(string input)
+    {
+        // step 1, calculate MD5 hash from input
+        MD5 md5 = System.Security.Cryptography.MD5.Create();
+        byte[] inputBytes = System.Text.Encoding.ASCII.GetBytes(input);
+        byte[] hash = md5.ComputeHash(inputBytes);
+        // step 2, convert byte array to hex string
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < hash.Length; i++)
+        {
+            sb.Append(hash[i].ToString("X2"));
+        }
+        return sb.ToString();
     }
     #endregion
 }
