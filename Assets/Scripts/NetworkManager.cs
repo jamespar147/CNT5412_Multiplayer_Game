@@ -213,9 +213,13 @@ public class NetworkManager : MonoBehaviour {
     public class MasterJSON {
         public string json;
         public string signature;
+        public string nonce;
         public MasterJSON(JsonClass data, AsymmetricCipherKeyPair clientKeyPair) {
+            System.Random rnd = new System.Random();
+            string rndN = rnd.Next(100000, 999999).ToString();
+            nonce = encryptWithServerPublic(rndN);
             json = JsonUtility.ToJson(data);
-            string md5 = CalculateMD5Hash(json);
+            string md5 = CalculateMD5Hash(json + rndN);
             string ciphered = encryptWithUserPrivate(md5, clientKeyPair);
             //string ciphered = encryptWithUserPrivate("hello", clientKeyPair);
             string plain = decryptWithUserPublic(ciphered, clientKeyPair);
