@@ -21,6 +21,7 @@ public class NetworkManager : MonoBehaviour {
     public InputField playerNameInput;
     public GameObject player;
     public AsymmetricCipherKeyPair clientKeyPair;
+    public int nonce;
 
     public AudioSource backgroundMusic;
 
@@ -56,6 +57,12 @@ public class NetworkManager : MonoBehaviour {
         //Crypto
         GenerateKeyPair();
         string cipheredStr = encryptWithServerPublic(getPublicClientKey());
+        
+        System.Random rnd = new System.Random();
+        nonce = rnd.Next(0, 9999);
+        string nonceStr = nonce.ToString(); //mod 10000
+        string encrypteduser = encryptWithUserPrivate(nonceStr, clientKeyPair);
+        string encryptedNonce = encryptWithServerPublic(encrypteduser);
         //Crypto
         yield return new WaitForSeconds(0.5f);
 
@@ -66,7 +73,7 @@ public class NetworkManager : MonoBehaviour {
         string playerName = playerNameInput.text;
         List<SpawnPoint> playerSpawnPoints = GetComponent<PlayerSpawner>().playerSpawnPoints;
         List<SpawnPoint> enemySpawnPoints = GetComponent<EnemySpawner>().enemySpawnPoints;
-        PlayerJSON playerJSON = new PlayerJSON(playerName, playerSpawnPoints, enemySpawnPoints, cipheredStr);
+        PlayerJSON playerJSON = new PlayerJSON(playerName, playerSpawnPoints, enemySpawnPoints, cipheredStr, encryptedNonce);
         string data = JsonUtility.ToJson(playerJSON);
         socket.Emit("play",new JSONObject(data));
         canvas.gameObject.SetActive(false);
@@ -77,7 +84,8 @@ public class NetworkManager : MonoBehaviour {
 
     public void CommandMove(Vector3 vec3) {
         //string data = JsonUtility.ToJson(new PositionJSON(playerNameInput.text, vec3));
-        string data = JsonUtility.ToJson(new MasterJSON(new PositionJSON(playerNameInput.text, vec3), clientKeyPair));
+        nonce = (nonce + 1)%10000;
+        string data = JsonUtility.ToJson(new MasterJSON(new PositionJSON(playerNameInput.text, vec3), clientKeyPair, nonce.ToString()));
         socket.Emit("player move", new JSONObject(data));
     }
 
@@ -213,16 +221,12 @@ public class NetworkManager : MonoBehaviour {
     public class MasterJSON {
         public string json;
         public string signature;
-        public string nonce;
-        public MasterJSON(JsonClass data, AsymmetricCipherKeyPair clientKeyPair) {
-            System.Random rnd = new System.Random();
-            string rndN = rnd.Next(100000, 999999).ToString();
-            nonce = encryptWithServerPublic(rndN);
+        public MasterJSON(JsonClass data, AsymmetricCipherKeyPair clientKeyPair, string nonce) {
             json = JsonUtility.ToJson(data);
-            string md5 = CalculateMD5Hash(json + rndN);
+            string md5 = CalculateMD5Hash(json + nonce);
             string ciphered = encryptWithUserPrivate(md5, clientKeyPair);
             //string ciphered = encryptWithUserPrivate("hello", clientKeyPair);
-            string plain = decryptWithUserPublic(ciphered, clientKeyPair);
+            //string plain = decryptWithUserPublic(ciphered, clientKeyPair);
             signature = ciphered;
         }
     }
@@ -237,14 +241,16 @@ public class NetworkManager : MonoBehaviour {
     public class PlayerJSON : JsonClass{
         public string name;
         public string publicKey;
+        public string nonce;
         public List<PointJSON> playerSpawnPoints;
         public List<PointJSON> enemySpawnPoints;
 
-        public PlayerJSON(string _name, List<SpawnPoint> _playerSpawnPoints, List<SpawnPoint> _enemySpawnPoints, string _key) {
+        public PlayerJSON(string _name, List<SpawnPoint> _playerSpawnPoints, List<SpawnPoint> _enemySpawnPoints, string _key, string _nonce) {
             playerSpawnPoints = new List<PointJSON>();
             enemySpawnPoints = new List<PointJSON>();
             name = _name;
             publicKey = _key;
+            nonce = _nonce;
 
             foreach (SpawnPoint playerSpawnPoint in _playerSpawnPoints) {
                 PointJSON pointJSON = new PointJSON(playerSpawnPoint);
