@@ -5,6 +5,7 @@ public class PlayerController : MonoBehaviour {
 
     public GameObject bulletPrefab;
     public Transform bulletSpawn;
+    public Camera cam;
     public bool isLocalPlayer = false;
 
     Vector3 oldPosition;
@@ -18,7 +19,10 @@ public class PlayerController : MonoBehaviour {
         currentPosition = oldPosition;
         oldRotation = transform.rotation;
         currentRotation = oldRotation;
-	}
+
+        if (!isLocalPlayer)
+            cam.enabled = false;
+    }
 	
 	// Update is called once per frame
 	void Update () {
