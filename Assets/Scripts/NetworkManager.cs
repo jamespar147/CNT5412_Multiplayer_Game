@@ -22,6 +22,7 @@ public class NetworkManager : MonoBehaviour {
     public GameObject player;
     public AsymmetricCipherKeyPair clientKeyPair;
     public int nonce;
+    public bool canLogin;
 
     public AudioSource backgroundMusic;
 
@@ -45,6 +46,7 @@ public class NetworkManager : MonoBehaviour {
         socket.On("player shoot", OnPlayerShoot);
         socket.On("health", OnHealth);
         socket.On("other player disconnected", OnOtherPlayerDisconnect);
+        socket.On("can login", OnCanLogin);
     }
     
 
@@ -54,32 +56,41 @@ public class NetworkManager : MonoBehaviour {
 
     #region Commands
     IEnumerator ConnectToServer() {
-        //Crypto
-        GenerateKeyPair();
-        string cipheredStr = encryptWithServerPublic(getPublicClientKey());
-        
-        System.Random rnd = new System.Random();
-        nonce = rnd.Next(0, 9999);
-        string nonceStr = nonce.ToString(); //mod 10000
-        string encrypteduser = encryptWithUserPrivate(nonceStr, clientKeyPair);
-        string encryptedNonce = encryptWithServerPublic(encrypteduser);
-        //Crypto
-        yield return new WaitForSeconds(0.5f);
-
-        socket.Emit("player connect");
-
-        yield return new WaitForSeconds(1f);
-
+        canLogin = false;
         string playerName = playerNameInput.text;
-        List<SpawnPoint> playerSpawnPoints = GetComponent<PlayerSpawner>().playerSpawnPoints;
-        List<SpawnPoint> enemySpawnPoints = GetComponent<EnemySpawner>().enemySpawnPoints;
-        PlayerJSON playerJSON = new PlayerJSON(playerName, playerSpawnPoints, enemySpawnPoints, cipheredStr, encryptedNonce);
-        string data = JsonUtility.ToJson(playerJSON);
-        socket.Emit("play",new JSONObject(data));
-        canvas.gameObject.SetActive(false);
-        Cursor.lockState = UnityEngine.CursorLockMode.Locked;
-        Cursor.visible = false;
-        backgroundMusic.enabled = true;
+        PlayerAskJSON playerAskJSON = new PlayerAskJSON(playerName);
+        string data = JsonUtility.ToJson(playerAskJSON);
+        socket.Emit("check username", new JSONObject(data));
+        yield return new WaitForSeconds(1f);
+        if (canLogin)
+        {
+            //Crypto
+            GenerateKeyPair();
+            string cipheredStr = encryptWithServerPublic(getPublicClientKey());
+
+            System.Random rnd = new System.Random();
+            nonce = rnd.Next(0, 9999);
+            string nonceStr = nonce.ToString(); //mod 10000
+            string encrypteduser = encryptWithUserPrivate(nonceStr, clientKeyPair);
+            string encryptedNonce = encryptWithServerPublic(encrypteduser);
+            //Crypto
+            yield return new WaitForSeconds(0.5f);
+
+            socket.Emit("player connect");
+
+            yield return new WaitForSeconds(1f);
+
+
+            List<SpawnPoint> playerSpawnPoints = GetComponent<PlayerSpawner>().playerSpawnPoints;
+            List<SpawnPoint> enemySpawnPoints = GetComponent<EnemySpawner>().enemySpawnPoints;
+            PlayerJSON playerJSON = new PlayerJSON(playerName, playerSpawnPoints, enemySpawnPoints, cipheredStr, encryptedNonce);
+            data = JsonUtility.ToJson(playerJSON);
+            socket.Emit("play", new JSONObject(data));
+            canvas.gameObject.SetActive(false);
+            Cursor.lockState = UnityEngine.CursorLockMode.Locked;
+            Cursor.visible = false;
+            backgroundMusic.enabled = true;
+        }
     }
 
     public void CommandMove(Vector3 vec3) {
@@ -108,6 +119,11 @@ public class NetworkManager : MonoBehaviour {
     #endregion
 
     #region Listening
+    void OnCanLogin(SocketIO.SocketIOEvent socketIOEvent)
+    {
+        PlayerReplyJSON response = PlayerReplyJSON.CreateFromJSON(socketIOEvent.data.ToString());
+        canLogin = response.reply.Equals("yes") ? true : false;
+    }
     void OnEnemies(SocketIO.SocketIOEvent socketIOEvent)
     {
         EnemiesJSON enemiesJSON = EnemiesJSON.CreateFromJSON(socketIOEvent.data.ToString());
@@ -228,6 +244,29 @@ public class NetworkManager : MonoBehaviour {
             //string ciphered = encryptWithUserPrivate("hello", clientKeyPair);
             //string plain = decryptWithUserPublic(ciphered, clientKeyPair);
             signature = ciphered;
+        }
+    }
+
+    [Serializable]
+    public class PlayerAskJSON
+    {
+        public string username;
+        public PlayerAskJSON(string _username)
+        {
+            username = _username;
+        }
+    }
+    [Serializable]
+    public class PlayerReplyJSON
+    {
+        public string reply;
+        public PlayerReplyJSON(string _reply)
+        {
+            reply = _reply;
+        }
+        public static PlayerReplyJSON CreateFromJSON(string data)
+        {
+            return JsonUtility.FromJson<PlayerReplyJSON>(data);
         }
     }
 
