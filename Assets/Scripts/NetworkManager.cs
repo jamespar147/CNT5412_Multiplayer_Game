@@ -151,7 +151,7 @@ public class NetworkManager : MonoBehaviour {
     {
         EnemiesJSON enemiesJSON = EnemiesJSON.CreateFromJSON(socketIOEvent.data.ToString());
         EnemySpawner es = GetComponent<EnemySpawner>();
-        es.SpawnEnemies(enemiesJSON);
+        //es.SpawnEnemies(enemiesJSON);
     }
     void OnOtherPlayerConnected(SocketIO.SocketIOEvent socketIOEvent)
     {

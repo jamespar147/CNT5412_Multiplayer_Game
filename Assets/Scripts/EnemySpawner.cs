@@ -10,6 +10,7 @@ public class EnemySpawner : MonoBehaviour {
     [HideInInspector]
     public List<SpawnPoint> enemySpawnPoints;
 
+    /*
 	// Use this for initialization
 	void Start () {
         // set the random spawn points
@@ -42,4 +43,5 @@ public class EnemySpawner : MonoBehaviour {
             h.isEnemy = true;
         }
     }
+    */
 }
