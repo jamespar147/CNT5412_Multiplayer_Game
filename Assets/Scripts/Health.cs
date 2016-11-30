@@ -10,6 +10,8 @@ public class Health : MonoBehaviour {
     public bool isEnemy = false;
 
     public RectTransform healthBar;
+    public AudioSource deathSource;
+    public AudioClip death;
 
     private bool isLocalPlayer;
 
@@ -33,6 +35,7 @@ public class Health : MonoBehaviour {
                 Destroy(gameObject);
             }
             else {
+                deathSource.PlayOneShot(death, 1.0f);
                 NetworkManager n = NetworkManager.instance.GetComponent<NetworkManager>();
                 n.CommandRestoreHealth();
                 currentHealth = maxHealth;
