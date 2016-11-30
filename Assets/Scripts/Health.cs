@@ -33,6 +33,8 @@ public class Health : MonoBehaviour {
                 Destroy(gameObject);
             }
             else {
+                NetworkManager n = NetworkManager.instance.GetComponent<NetworkManager>();
+                n.CommandRestoreHealth();
                 currentHealth = maxHealth;
                 healthBar.sizeDelta = new Vector2(currentHealth, healthBar.sizeDelta.y);
                 Respawn();

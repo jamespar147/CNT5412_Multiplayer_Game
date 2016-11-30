@@ -23,8 +23,22 @@ public class NetworkManager : MonoBehaviour {
     public AsymmetricCipherKeyPair clientKeyPair;
     public int nonce;
     public bool canLogin;
-
+    public bool logged;
     public AudioSource backgroundMusic;
+
+    void OnApplicationFocus(bool focus)
+    {
+        if (focus && logged)
+            StartCoroutine(LockCursor());
+    }
+    void OnApplicationPaused(bool focus) {
+        print("Is paused");
+    }
+    IEnumerator LockCursor()
+    {
+        yield return new WaitForSeconds(0.1f);
+        Cursor.lockState = UnityEngine.CursorLockMode.Locked;
+    }
 
     void Awake() {
         if (instance == null)
@@ -57,6 +71,7 @@ public class NetworkManager : MonoBehaviour {
     #region Commands
     IEnumerator ConnectToServer() {
         canLogin = false;
+        logged = false;
         string playerName = playerNameInput.text;
         PlayerAskJSON playerAskJSON = new PlayerAskJSON(playerName);
         string data = JsonUtility.ToJson(playerAskJSON);
@@ -90,6 +105,7 @@ public class NetworkManager : MonoBehaviour {
             Cursor.lockState = UnityEngine.CursorLockMode.Locked;
             Cursor.visible = false;
             backgroundMusic.enabled = true;
+            logged = true;
         }
     }
 
@@ -114,6 +130,11 @@ public class NetworkManager : MonoBehaviour {
         print("health change cmd");
         HealthChangeJSON healthChangeJSON = new HealthChangeJSON(playerTo.name, healthChange, playerFrom.name, isEnemy);
         socket.Emit("health", new JSONObject(JsonUtility.ToJson(healthChangeJSON)));
+    }
+
+    public void CommandRestoreHealth() {
+        print("restoring health");
+        socket.Emit("restoreHealth");
     }
 
     #endregion
@@ -430,7 +451,7 @@ public class NetworkManager : MonoBehaviour {
         return publicKey;
     }
     public static string encryptWithServerPublic(string content) {
-        string publicKeyPath = @"C:\Users\Chimi-PC\Documents\FSU\2016_03_fall\CNT5412\Project\gits\Server\CNT5412_Multiplayer_Game\Assets\public_key.txt";
+        string publicKeyPath = Application.dataPath + "/public_key.txt";
         var bytesToEncrypt = System.Text.Encoding.UTF8.GetBytes(content);
         AsymmetricKeyParameter keyPair;
         using (var reader = System.IO.File.OpenText(publicKeyPath))
