@@ -31,9 +31,11 @@ public class NetworkManager : MonoBehaviour {
         if (focus && logged)
             StartCoroutine(LockCursor());
     }
+
     void OnApplicationPaused(bool focus) {
         print("Is paused");
     }
+
     IEnumerator LockCursor()
     {
         yield return new WaitForSeconds(0.1f);
