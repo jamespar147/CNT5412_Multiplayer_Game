@@ -1,5 +1,5 @@
-﻿using UnityEngine;
-using System.Collections;
+﻿using System;
+using UnityEngine;
 
 public class PlayerController : MonoBehaviour {
 
@@ -7,8 +7,8 @@ public class PlayerController : MonoBehaviour {
     public Transform bulletSpawn;
     public Camera cam;
     public Rigidbody body;
-    public Collider collider;
-    public AudioListener audio;
+    public Collider playerCollider;
+    public AudioListener playerAudio;
     public AudioSource pewSource;
     public AudioClip pew;
 
@@ -28,18 +28,21 @@ public class PlayerController : MonoBehaviour {
         oldRotation = transform.rotation;
         currentRotation = oldRotation;
 
+        playerCollider = GetComponentInParent<Collider>();
+        playerAudio = GetComponentInParent<AudioListener>();
+
         if (!isLocalPlayer) {
             cam.enabled = false;
-            audio.enabled = false;
+            playerAudio.enabled = false;
         }
 
         if (isLocalPlayer)
-            distToGround = collider.bounds.extents.y;
+            distToGround = playerCollider.bounds.extents.y;
     }
-	
-	// Update is called once per frame
-	void Update () {
-	    if(!isLocalPlayer) {
+
+    // Update is called once per frame
+    void Update () {
+	    if (!isLocalPlayer) {
             return;
         }
 
@@ -47,7 +50,7 @@ public class PlayerController : MonoBehaviour {
         var z = Input.GetAxis("Vertical") * Time.deltaTime * 15.0f;
         var y = Input.GetAxis("Horizontal") * Time.deltaTime * 15.0f;
 
-        if (Input.GetKeyDown("space") && isGrounded()) {
+        if (Input.GetKeyDown("space") && IsGrounded()) {
             body.AddForce(Vector3.up * JumpSpeed);
         }
 
@@ -57,7 +60,7 @@ public class PlayerController : MonoBehaviour {
         currentPosition = transform.position;
         currentRotation = transform.rotation;
 
-        if(currentPosition != oldPosition) {
+        if (currentPosition != oldPosition) {
             NetworkManager.instance.GetComponent<NetworkManager>().CommandMove(transform.position);
             oldPosition = currentPosition;
         }
@@ -67,10 +70,9 @@ public class PlayerController : MonoBehaviour {
             oldRotation = currentRotation;
         }
 
-        if(Input.GetMouseButtonDown(0)) {
-            //new.CommandShott();
-            NetworkManager n = NetworkManager.instance.GetComponent<NetworkManager>();
-            n.CommandShoot();
+        if (Input.GetMouseButtonDown(0)) {
+            NetworkManager networkManager = NetworkManager.instance.GetComponent<NetworkManager>();
+            networkManager.CommandShoot();
         }
     }
 
@@ -85,7 +87,7 @@ public class PlayerController : MonoBehaviour {
         Destroy(bullet, 2.0f);
     }
 
-    public bool isGrounded() {
+    public bool IsGrounded() {
         return Physics.Raycast(transform.position, -Vector3.up, distToGround + 0.1f);
     }
 }
