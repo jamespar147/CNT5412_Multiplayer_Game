@@ -129,8 +129,9 @@ public class NetworkManager : MonoBehaviour {
 
     public void CommandHealthChanged(GameObject playerFrom, GameObject playerTo, int healthChange, bool isEnemy) {
         print("health change cmd");
-        HealthChangeJSON healthChangeJSON = new HealthChangeJSON(playerTo.name, healthChange, playerFrom.name, isEnemy);
-        socket.Emit("health", new JSONObject(JsonUtility.ToJson(healthChangeJSON)));
+        nonce = (nonce + 1)%10000;
+        string data = JsonUtility.ToJson(new MasterJSON(new HealthChangeJSON(playerTo.name, healthChange, playerFrom.name, isEnemy), clientKeyPair, nonce.ToString()));
+        socket.Emit("health", new JSONObject(data));
     }
 
     public void CommandRestoreHealth() {
